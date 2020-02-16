@@ -34,8 +34,22 @@ app.get("/scrape", function(req, res){
     axios.get("https://www.foxnews.com/").then(function(response){
         var $ = cherrio.load(response.data);
 
-        $(".info").each(function(i, element){
-            var 
+        $(".article").each(function(i, element){
+            var article = $(element).children("info").text();
+            var link = $(element).children("a").attr("href");
+
+            if(article && link){
+                db.scrapedData.insert({
+                    article: article,
+                    link: link
+                },
+                )
+            }
         })
     })
+})
+
+
+app.listen(3000, function() {
+    console.log("app running on port 3000")
 })
