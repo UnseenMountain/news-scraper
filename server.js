@@ -6,11 +6,25 @@ var cheerio = require("cherrio");
 
 var axios = require("axios");
 
+//loads Express
 var app = express();
 
-var databaseURL = "https://www.foxnews.com/";
+
+
+var databaseURL = "scraper";
 var collections = ["scrapedData"];
 
+app.use(express.static("public"));
+
+app.use(express.urlnencoded({ extended: true}));
+app.use(express.json());
+
+app.engine("handlebars", exphbs({ defaultLayout: "main"}));
+app.set("view engine", "handlebars");
+
+var routes = require("./controllers/newsController.js");
+
+// Hook mongojs configuration to the db variable
 var db = mongojs(databaseURL, collections);
 db.on("error",  function(error){
     console.log("Database error", error);
@@ -31,22 +45,36 @@ app.get("/all", function(req, res){
 });
 
 app.get("/scrape", function(req, res){
-    axios.get("https://www.foxnews.com/").then(function(response){
+    axios.get("https://www.pcgamer.com/news/").then(function(response){
+         // Load the html body from axios into cheerio
         var $ = cherrio.load(response.data);
 
-        $(".article").each(function(i, element){
-            var article = $(element).children("info").text();
-            var link = $(element).children("a").attr("href");
+        $(".title").each(function(i, element) {
+            // Save the text and href of each link enclosed in the current element
+            var headLine = $(element).children("h3").text();
+            var summery = $(element).children("p").text();
+            // var link = $(element).children("a").attr("href");
+            var link = "https://www.pcgamer.com/news/" + $(element).find("a").attr("href");
 
-            if(article && link){
+            if (title && link) {
+                // Insert the data in the scrapedData db
                 db.scrapedData.insert({
-                    article: article,
-                    link: link
+                 headLine: headLine,
+                 summery: summery,
+                  link: link
                 },
-                )
+                function (err, inserted) {
+                    if (err){
+                        console.log(err);
+                    }else{
+                        console.log(inserted);
+                    }
+                })
             }
         })
     })
+
+    res.send("Scrape Complete");
 })
 
 
