@@ -1,77 +1,119 @@
 var express = require("express");
+var exphbs = require("express-handlebars");
 var mongoose = require("mongoose");
-var expressHandlebars = require("express-handlebars");
-var bodyParser = require("body-parser");
+var axios = require("axios");
+var cheerio = require("cheerio");
+var db = require("./models")
 
-var PORT = process.env.PORT || 3000;
+var port = process.env.PORT || 3000;
 
 var app = express();
 
-var router = express.Router();
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
+// Make public a static folder
+app.use(express.static("public"));
 
-require("./config/routes")(router);
-
-app.use(express.static(__dirname + "/public"));
-
-app.engine("handlebars", expressHandlebars({
-  defaultLayout: "main"
-}));
+app.engine("handlebars", exphbs({ defaultLayout: "main" }));
 app.set("view engine", "handlebars");
+app.set('index', __dirname + '/views');
 
-app.use(bodyParser.urlencoded({
-  extended: false
-}));
+// If deployed, use the deployed database. Otherwise use the local mongoHeadlines database
+var MONGODB_URI = process.env.MONGODB_URI || "mongodb://localhost/mongoHeadlines";
 
-app.use(router);
+mongoose.connect(MONGODB_URI, { useNewUrlParser: true });
+var results = [];
 
-var db = process.env.MONGODB_URI || "mongodb://localhost/mongoHeadlines";
+// Start routes here...
+app.get("/", function (req, res) {
+    db.Article.find({ saved: false }, function (err, result) {
+        if (err) throw err;
+        res.render("index", { result })
+    })
 
-mongoose.connect(db, function(error) {
- 
-   if (error) {
-    console.log(error);
-  }
- 
-  else {
-    console.log("mongoose connection is successful");
-  }
+});
+app.get("/newscrape", function (req, res) {
+    axios.get("https://www.nytimes.com/").then(function (response) {
+        var $ = cheerio.load(response.data)
+        $("h2 span").each(function (i, element) {
+            var headline = $(element).text();
+            var link = "https://www.nytimes.com";
+            link = link + $(element).parents("a").attr("href");
+            var summaryOne = $(element).parent().parent().siblings().children("li:first-child").text();
+            var summaryTwo = $(element).parent().parent().siblings().children("li:last-child").text();
+
+            if (headline && summaryOne && link) {
+                results.push({
+                    headline: headline,
+                    summaryOne: summaryOne,
+                    summaryTwo: summaryTwo,
+                    link: link
+                })
+            }
+        });
+        db.Article.create(results)
+            .then(function (dbArticle) {
+                res.render("index", { dbArticle });
+                console.log(dbArticle);
+            })
+            .catch(function (err) {
+                console.log(err);
+            })
+        app.get("/", function (req, res) {
+            res.render("index")
+        })
+    })
 });
 
-app.listen(PORT, function() {
-  console.log("Listening on port:" + PORT);
+app.put("/update/:id", function (req, res) {
+    console.log("!!!!!!!!!!!!!!!!!!!!!!!!!!")
+    db.Article.updateOne({ _id: req.params.id }, { $set: { saved: true } }, function (err, result) {
+        if (result.changedRows == 0) {
+            return res.status(404).end();
+        } else {
+            res.status(200).end();
+        }
+    });
 });
+app.put("/unsave/:id", function(req, res) {
+    console.log("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
+    console.log(req.body)
+    db.Article.updateOne({ _id: req.params.id }, { $set: { saved: false }}, function(err, result) {
+        if (result.changedRows == 0) {
+            return res.status(404).end();
+        } else {
+            res.status(200).end();
+        }
+    })
+})
+
+app.put("/newnote/:id", function(req, res) {
+    console.log("**********************************")
+    console.log(req.body)
+    console.log(req.body._id);
+    console.log(req.body.note);
+    db.Article.updateOne({ _id: req.body._id }, { $push: { note: req.body.note }}, function(err, result) {
+        console.log(result)
+        if (result.changedRows == 0) {
+            return res.status(404).end();
+        } else {
+            res.status(200).end();
+        } 
+    })
+})
 
 
 
+app.get("/saved", function (req, res) {
+    var savedArticles = [];
+    db.Article.find({ saved: true }, function (err, saved) {
+        if (err) throw err;
+        savedArticles.push(saved)
+        res.render("saved", { saved })
+    })
+})
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+app.listen(port, function () {
+    console.log("Server listening on: http://localhost:" + port);
+})
